@@ -1,209 +1,85 @@
 import streamlit as st
 import numpy as np
 import tensorflow as tf
-import pandas as pd
-from PIL import Image
 import cv2
 import matplotlib.pyplot as plt
-import gdown
+from PIL import Image
 import os
+import gdown
 
-# -----------------------------------------------------
-# PAGE CONFIG
-# -----------------------------------------------------
+st.set_page_config(page_title="Rice Leaf Disease Detection", layout="wide")
 
-st.set_page_config(
-    page_title="Rice Leaf Disease Detection",
-    page_icon="🌾",
-    layout="wide"
-)
+# -------------------------------
+# Title
+# -------------------------------
 
-st.title("🌾 AI Based Rice Leaf Disease Detection System")
+st.title("Rice Leaf Disease Detection using Deep Learning")
+st.write("Upload a rice leaf image to detect disease and visualize infected region.")
 
-st.markdown("""
-Deep Learning based system to detect **rice leaf diseases**.
-
-### Models Used
-• AlexNet  
-• ResNet50  
-• MobileNetV2  
-• Ensemble CNN Model  
-
-Includes **Explainable AI using Grad-CAM**.
-""")
-
-# -----------------------------------------------------
-# MODEL CONFIG
-# -----------------------------------------------------
-
-MODEL_PATH = "rice_disease_model.h5"
-
-FILE_ID = "1mgcTQlARjLqiJj8ZNnqHQGazIYUcgflh"
-
-MODEL_URL = f"https://drive.google.com/uc?id={FILE_ID}"
-
-IMG_SIZE = 224
-
-TRAINED_MODEL_ACCURACY = 0.96
-
-
-# -----------------------------------------------------
-# DOWNLOAD MODEL
-# -----------------------------------------------------
-
-def download_model():
-
-    if not os.path.exists(MODEL_PATH):
-
-        with st.spinner("Downloading AI model..."):
-
-            try:
-                gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
-
-            except:
-                st.error("Model download failed. Check Google Drive permissions.")
-                st.stop()
-
-    return MODEL_PATH
-
-
-# -----------------------------------------------------
-# LOAD MODEL
-# -----------------------------------------------------
+# -------------------------------
+# Load Model
+# -------------------------------
 
 @st.cache_resource
 def load_model():
 
-    path = download_model()
+    MODEL_PATH = "rice_model.h5"
 
-    model = tf.keras.models.load_model(path)
+    if not os.path.exists(MODEL_PATH):
+
+        file_id = "YOUR_GOOGLE_DRIVE_MODEL_ID"
+        url = f"https://drive.google.com/uc?id={file_id}"
+
+        gdown.download(url, MODEL_PATH, quiet=False)
+
+    model = tf.keras.models.load_model(MODEL_PATH)
 
     return model
 
 
 model = load_model()
 
-# -----------------------------------------------------
-# CLASS LABELS
-# -----------------------------------------------------
+# -------------------------------
+# Class Names
+# -------------------------------
 
-classes = [
+class_names = [
     "Bacterial Leaf Blight",
     "Brown Spot",
     "Leaf Smut",
-    "Healthy / Non Rice"
+    "Healthy"
 ]
 
-# -----------------------------------------------------
-# DISEASE INFO
-# -----------------------------------------------------
-
-disease_info = {
-
-    "Bacterial Leaf Blight": {
-        "description": "Bacterial disease caused by Xanthomonas oryzae.",
-        "solution": [
-            "Use resistant rice varieties",
-            "Apply Streptomycin spray",
-            "Avoid excessive nitrogen fertilizer"
-        ]
-    },
-
-    "Brown Spot": {
-        "description": "Fungal disease caused by Bipolaris oryzae.",
-        "solution": [
-            "Apply Mancozeb fungicide",
-            "Improve soil fertility",
-            "Use treated seeds"
-        ]
-    },
-
-    "Leaf Smut": {
-        "description": "Fungal infection producing black spots.",
-        "solution": [
-            "Remove infected leaves",
-            "Maintain field hygiene",
-            "Apply copper fungicide"
-        ]
-    },
-
-    "Healthy / Non Rice": {
-        "description": "Leaf is healthy or not rice.",
-        "solution": [
-            "No treatment required"
-        ]
-    }
-
-}
-
-# -----------------------------------------------------
-# IMAGE PREPROCESS
-# -----------------------------------------------------
+# -------------------------------
+# Image Preprocessing
+# -------------------------------
 
 def preprocess_image(image):
 
-    image = image.resize((IMG_SIZE, IMG_SIZE))
+    img = image.resize((224,224))
+    img = np.array(img)
 
-    img = np.array(image) / 255.0
+    img = img / 255.0
 
     img = np.expand_dims(img, axis=0)
 
     return img
 
 
-# -----------------------------------------------------
-# PREDICTION
-# -----------------------------------------------------
+# -------------------------------
+# GradCAM Function
+# -------------------------------
 
-def predict(img):
-
-    preds = model.predict(img)
-
-    if isinstance(preds, list):
-        preds = preds[0]
-
-    index = np.argmax(preds)
-
-    label = classes[index]
-
-    confidence = float(np.max(preds))
-
-    return label, confidence, preds
-
-
-# -----------------------------------------------------
-# FIND LAST CONV LAYER
-# -----------------------------------------------------
-
-def get_last_conv_layer(model):
-
-    for layer in reversed(model.layers):
-
-        if isinstance(layer, tf.keras.layers.Conv2D):
-            return layer.name
-
-    return None
-
-
-# -----------------------------------------------------
-# GRAD CAM
-# -----------------------------------------------------
-
-def make_gradcam_heatmap(img_array, model):
-
-    last_conv_layer = get_last_conv_layer(model)
+def make_gradcam_heatmap(img_array, model, last_conv_layer_name="block5_conv3"):
 
     grad_model = tf.keras.models.Model(
-        inputs=model.inputs,
-        outputs=[model.get_layer(last_conv_layer).output, model.output]
+        [model.inputs],
+        [model.get_layer(last_conv_layer_name).output, model.output]
     )
 
     with tf.GradientTape() as tape:
 
         conv_outputs, predictions = grad_model(img_array)
-
-        if isinstance(predictions, list):
-            predictions = predictions[0]
 
         pred_index = tf.argmax(predictions[0])
 
@@ -219,118 +95,102 @@ def make_gradcam_heatmap(img_array, model):
 
     heatmap = tf.squeeze(heatmap)
 
-    heatmap = tf.maximum(heatmap,0) / tf.reduce_max(heatmap)
+    heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
 
     return heatmap.numpy()
 
 
-# -----------------------------------------------------
-# IMAGE UPLOAD
-# -----------------------------------------------------
+# -------------------------------
+# Disease Region Extraction
+# -------------------------------
 
-st.sidebar.header("Upload Rice Leaf Image")
+def extract_disease_region(img, heatmap):
 
-uploaded_file = st.sidebar.file_uploader(
-    "Upload Image",
-    type=["jpg","png","jpeg"]
-)
+    img = cv2.resize(img, (224,224))
 
-# -----------------------------------------------------
-# MAIN APP
-# -----------------------------------------------------
+    heatmap_resized = cv2.resize(heatmap, (224,224))
 
-if uploaded_file:
+    heatmap_resized = np.uint8(255 * heatmap_resized)
+
+    if len(heatmap_resized.shape) == 3:
+        heatmap_resized = cv2.cvtColor(heatmap_resized, cv2.COLOR_BGR2GRAY)
+
+    _, mask = cv2.threshold(heatmap_resized, 150, 255, cv2.THRESH_BINARY)
+
+    mask = mask.astype(np.uint8)
+
+    mask = cv2.resize(mask, (img.shape[1], img.shape[0]))
+
+    disease_region = cv2.bitwise_and(img, img, mask=mask)
+
+    return disease_region
+
+
+# -------------------------------
+# Upload Image
+# -------------------------------
+
+uploaded_file = st.file_uploader("Upload Rice Leaf Image", type=["jpg","png","jpeg"])
+
+if uploaded_file is not None:
 
     image = Image.open(uploaded_file)
 
-    img = preprocess_image(image)
+    img = np.array(image)
 
-    label, confidence, preds = predict(img)
+    st.image(image, caption="Uploaded Image", width=300)
 
-    col1,col2,col3 = st.columns(3)
+    img_array = preprocess_image(image)
+
+    # -------------------------------
+    # Prediction
+    # -------------------------------
+
+    preds = model.predict(img_array)
+
+    predicted_class = class_names[np.argmax(preds)]
+
+    confidence = np.max(preds)
+
+    st.subheader("Prediction")
+
+    st.success(f"Disease: {predicted_class}")
+    st.write(f"Confidence: {confidence:.2f}")
+
+    # -------------------------------
+    # GradCAM
+    # -------------------------------
+
+    heatmap = make_gradcam_heatmap(img_array, model)
+
+    heatmap_resized = cv2.resize(heatmap, (224,224))
+
+    heatmap_colored = cv2.applyColorMap(
+        np.uint8(255 * heatmap_resized),
+        cv2.COLORMAP_JET
+    )
+
+    superimposed_img = heatmap_colored * 0.4 + img
+
+    # -------------------------------
+    # Disease Region
+    # -------------------------------
+
+    disease_region = extract_disease_region(img, heatmap)
+
+    # -------------------------------
+    # Display Results
+    # -------------------------------
+
+    st.subheader("Model Visualization")
+
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.subheader("Uploaded Image")
-        st.image(image)
+        st.image(img, caption="Original Leaf")
 
     with col2:
-        st.subheader("Prediction")
-        st.success(label)
-        st.metric("Confidence", f"{confidence*100:.2f}%")
-        st.metric("Model Accuracy", f"{TRAINED_MODEL_ACCURACY*100:.2f}%")
+        st.image(superimposed_img.astype("uint8"), caption="GradCAM Heatmap")
 
     with col3:
-        st.subheader("Disease Information")
-        st.write(disease_info[label]["description"])
-
-        st.write("### Solution")
-
-        for s in disease_info[label]["solution"]:
-            st.write("•", s)
-
-    # -----------------------------------------------------
-    # PROBABILITY CHART
-    # -----------------------------------------------------
-
-    st.subheader("Prediction Probability")
-
-    df = pd.DataFrame({
-        "Disease": classes,
-        "Probability": preds[0]
-    })
-
-    st.bar_chart(df.set_index("Disease"))
-
-    # -----------------------------------------------------
-    # GRAD CAM
-    # -----------------------------------------------------
-
-    st.subheader("Explainable AI (Grad-CAM Visualization)")
-
-    try:
-
-        heatmap = make_gradcam_heatmap(img, model)
-
-        heatmap = cv2.resize(heatmap,(224,224))
-
-        heatmap = np.uint8(255 * heatmap)
-
-        heatmap_color = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-
-        original = cv2.cvtColor(
-            np.array(image.resize((224,224))),
-            cv2.COLOR_RGB2BGR
-        )
-
-        overlay = cv2.addWeighted(original,0.6,heatmap_color,0.4,0)
-
-        col1,col2 = st.columns(2)
-
-        with col1:
-            st.subheader("GradCAM Heatmap")
-            st.image(heatmap_color,channels="BGR")
-
-        with col2:
-            st.subheader("GradCAM Overlay")
-            st.image(overlay,channels="BGR")
-
-    except Exception as e:
-
-        st.error("GradCAM visualization failed")
-        st.write(e)
-
-# -----------------------------------------------------
-# FOOTER
-# -----------------------------------------------------
-
-st.markdown("---")
-
-st.markdown("""
-### Deep Learning Models Used
-
-AlexNet | ResNet50 | MobileNetV2 | Ensemble CNN
-
-Author: **Yuvraj Sharma**  
-Co-Author: **Ranadip Manna**  
-Guide: **Dr. Subhashis**
-""")
+        st.image(disease_region, caption="Detected Disease Region")
