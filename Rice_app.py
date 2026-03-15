@@ -18,22 +18,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# -----------------------------------------------------
-# TITLE
-# -----------------------------------------------------
-
 st.title("🌾 AI Based Rice Leaf Disease Detection System")
 
 st.markdown("""
-This application detects **rice leaf diseases using Deep Learning models**.
+Deep Learning based system to detect **rice leaf diseases**.
 
 ### Models Used
-- AlexNet
-- ResNet50
-- MobileNetV2
-- Ensemble CNN Model
+• AlexNet  
+• ResNet50  
+• MobileNetV2  
+• Ensemble CNN Model  
 
-The system also provides **Explainable AI using Grad-CAM visualization**.
+Includes **Explainable AI using Grad-CAM**.
 """)
 
 # -----------------------------------------------------
@@ -50,7 +46,6 @@ IMG_SIZE = 224
 
 TRAINED_MODEL_ACCURACY = 0.96
 
-
 # -----------------------------------------------------
 # DOWNLOAD MODEL
 # -----------------------------------------------------
@@ -59,9 +54,14 @@ def download_model():
 
     if not os.path.exists(MODEL_PATH):
 
-        with st.spinner("Downloading model from Google Drive..."):
+        with st.spinner("Downloading AI model..."):
 
-            gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
+            try:
+                gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
+
+            except:
+                st.error("Model download failed. Check Google Drive permissions.")
+                st.stop()
 
     return MODEL_PATH
 
@@ -82,7 +82,6 @@ def load_model():
 
 model = load_model()
 
-
 # -----------------------------------------------------
 # CLASS LABELS
 # -----------------------------------------------------
@@ -94,7 +93,6 @@ classes = [
     "Healthy / Non Rice"
 ]
 
-
 # -----------------------------------------------------
 # DISEASE INFORMATION
 # -----------------------------------------------------
@@ -102,12 +100,8 @@ classes = [
 disease_info = {
 
     "Bacterial Leaf Blight": {
-
-        "description":
-        "A bacterial disease caused by Xanthomonas oryzae causing yellowing of leaves.",
-
+        "description": "Bacterial disease caused by Xanthomonas oryzae.",
         "solution": [
-
             "Use resistant rice varieties",
             "Apply Streptomycin spray",
             "Avoid excessive nitrogen fertilizer"
@@ -115,12 +109,8 @@ disease_info = {
     },
 
     "Brown Spot": {
-
-        "description":
-        "A fungal disease caused by Bipolaris oryzae producing brown lesions.",
-
+        "description": "Fungal disease caused by Bipolaris oryzae.",
         "solution": [
-
             "Apply Mancozeb fungicide",
             "Improve soil fertility",
             "Use treated seeds"
@@ -128,12 +118,8 @@ disease_info = {
     },
 
     "Leaf Smut": {
-
-        "description":
-        "Fungal infection producing black spots on rice leaves.",
-
+        "description": "Fungal infection producing black spots.",
         "solution": [
-
             "Remove infected leaves",
             "Maintain field hygiene",
             "Apply copper fungicide"
@@ -141,17 +127,13 @@ disease_info = {
     },
 
     "Healthy / Non Rice": {
-
-        "description":
-        "The image does not contain rice disease.",
-
+        "description": "Leaf is healthy or not rice.",
         "solution": [
             "No treatment required"
         ]
     }
 
 }
-
 
 # -----------------------------------------------------
 # IMAGE PREPROCESS
@@ -186,14 +168,14 @@ def predict(img):
 
 
 # -----------------------------------------------------
-# AUTOMATIC LAST CONV LAYER DETECTION
+# GET LAST CONV LAYER
 # -----------------------------------------------------
 
 def get_last_conv_layer(model):
 
     for layer in reversed(model.layers):
 
-        if "conv" in layer.name.lower():
+        if isinstance(layer, tf.keras.layers.Conv2D):
 
             return layer.name
 
@@ -204,7 +186,7 @@ def get_last_conv_layer(model):
 # GRAD CAM
 # -----------------------------------------------------
 
-def make_gradcam_heatmap(img_array, model):
+def make_gradcam_heatmap(img_array):
 
     last_conv_layer_name = get_last_conv_layer(model)
 
@@ -233,7 +215,12 @@ def make_gradcam_heatmap(img_array, model):
 
     heatmap = tf.maximum(heatmap, 0)
 
-    heatmap /= tf.reduce_max(heatmap)
+    max_val = tf.reduce_max(heatmap)
+
+    if max_val == 0:
+        max_val = 1e-10
+
+    heatmap /= max_val
 
     return heatmap.numpy()
 
@@ -242,13 +229,12 @@ def make_gradcam_heatmap(img_array, model):
 # IMAGE UPLOAD
 # -----------------------------------------------------
 
-st.sidebar.header("Upload Image")
+st.sidebar.header("Upload Rice Leaf Image")
 
 uploaded_file = st.sidebar.file_uploader(
-    "Upload Rice Leaf Image",
+    "Upload Image",
     type=["jpg", "png", "jpeg"]
 )
-
 
 # -----------------------------------------------------
 # MAIN APP
@@ -268,7 +254,7 @@ if uploaded_file:
 
         st.subheader("Uploaded Image")
 
-        st.image(image, use_column_width=True)
+        st.image(image)
 
     with col2:
 
@@ -278,7 +264,7 @@ if uploaded_file:
 
         st.metric("Confidence", f"{confidence*100:.2f}%")
 
-        st.metric("Training Accuracy", f"{TRAINED_MODEL_ACCURACY*100:.2f}%")
+        st.metric("Model Accuracy", f"{TRAINED_MODEL_ACCURACY*100:.2f}%")
 
     with col3:
 
@@ -291,7 +277,6 @@ if uploaded_file:
         for s in disease_info[label]["solution"]:
 
             st.write("•", s)
-
 
     # -----------------------------------------------------
     # PREDICTION CHART
@@ -309,16 +294,15 @@ if uploaded_file:
 
     st.bar_chart(df.set_index("Disease"))
 
-
     # -----------------------------------------------------
-    # GRADCAM VISUALIZATION
+    # GRAD CAM
     # -----------------------------------------------------
 
-    st.subheader("Explainable AI (Grad-CAM Visualization)")
+    st.subheader("Explainable AI (Grad-CAM)")
 
     try:
 
-        heatmap = make_gradcam_heatmap(img, model)
+        heatmap = make_gradcam_heatmap(img)
 
         heatmap = cv2.resize(heatmap, (224, 224))
 
@@ -336,21 +320,13 @@ if uploaded_file:
         col1, col2 = st.columns(2)
 
         with col1:
-
-            st.subheader("Grad-CAM Heatmap")
-
-            st.image(heatmap_color, channels="BGR")
+            st.image(heatmap_color, channels="BGR", caption="Grad-CAM Heatmap")
 
         with col2:
+            st.image(overlay, channels="BGR", caption="Grad-CAM Overlay")
 
-            st.subheader("Grad-CAM Overlay")
-
-            st.image(overlay, channels="BGR")
-
-    except Exception as e:
-
-        st.error("Grad-CAM visualization failed.")
-
+    except:
+        st.warning("Grad-CAM visualization failed.")
 
 # -----------------------------------------------------
 # FOOTER
@@ -361,12 +337,7 @@ st.markdown("---")
 st.markdown("""
 ### Deep Learning Models Used
 
-• AlexNet  
-• ResNet50  
-• MobileNetV2  
-• Ensemble CNN Model  
-
-These models were trained to improve rice disease detection accuracy.
+AlexNet | ResNet50 | MobileNetV2 | Ensemble CNN
 
 Author: **Yuvraj Sharma**  
 Co-Author: **Ranadip Manna**  
