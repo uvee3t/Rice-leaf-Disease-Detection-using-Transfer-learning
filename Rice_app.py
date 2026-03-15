@@ -23,14 +23,8 @@ st.title("🌾 AI Based Rice Leaf Disease Detection System")
 st.markdown("""
 Deep Learning based system to detect **rice leaf diseases**.
 
-### Models Used
-• AlexNet & CNN (Base model)\
-• VGG16 (Best Model)\
-• ResNet50\
-• MobileNetV2\
-• EfficientNetB0\
-• Ensemble CNN Model
-               
+### Models Used - AlexNet | VGG16 (Best) | ResNet50 | MobileNetV2 (Runner-up) | EfficentNetB0 | Ensemble CNN 
+
 
 Includes **Explainable AI using Grad-CAM**.
 """)
