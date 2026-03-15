@@ -186,12 +186,15 @@ def get_last_conv_layer(model):
 # GRAD CAM
 # -----------------------------------------------------
 
+# -----------------------------------------------------
+# GRAD CAM FUNCTION (VGG16 FIX)
+# -----------------------------------------------------
 
-def make_gradcam_heatmap(img_array, model, last_conv_layer_name):
+def make_gradcam_heatmap(img_array, model, last_conv_layer_name="block5_conv3"):
 
     grad_model = tf.keras.models.Model(
-        [model.inputs],
-        [model.get_layer(last_conv_layer_name).output, model.output]
+        inputs=model.inputs,
+        outputs=[model.get_layer(last_conv_layer_name).output, model.output]
     )
 
     with tf.GradientTape() as tape:
@@ -296,20 +299,13 @@ if uploaded_file:
 
 try:
 
-    # 🔹 Change this layer if needed
-    LAST_CONV_LAYER = "conv5_block3_out"
-
-    heatmap = make_gradcam_heatmap(
-        img,
-        model,
-        LAST_CONV_LAYER
-    )
+    heatmap = make_gradcam_heatmap(img, model)
 
     heatmap = cv2.resize(heatmap,(224,224))
 
     heatmap = np.uint8(255 * heatmap)
 
-    heatmap_color = cv2.applyColorMap(heatmap,cv2.COLORMAP_JET)
+    heatmap_color = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
 
     original = cv2.cvtColor(
         np.array(image.resize((224,224))),
@@ -321,18 +317,17 @@ try:
     col1,col2 = st.columns(2)
 
     with col1:
-        st.subheader("GradCAM Heatmap")
+        st.subheader("Grad-CAM Heatmap")
         st.image(heatmap_color,channels="BGR")
 
     with col2:
-        st.subheader("GradCAM Overlay")
+        st.subheader("Grad-CAM Overlay Result")
         st.image(overlay,channels="BGR")
 
 except Exception as e:
 
-    st.error("GradCAM failed. Check layer name.")
-    st.write("Model Layers:", [layer.name for layer in model.layers])
-
+    st.error("GradCAM visualization failed")
+    st.write(e)
 # -----------------------------------------------------
 # FOOTER
 # -----------------------------------------------------
